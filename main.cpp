@@ -5,6 +5,7 @@
 #include <fat.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <filesystem>
 #include "miniz.h"
 
 extern "C" {
@@ -22,6 +23,10 @@ const DISC_INTERFACE *usb = &__io_usbstorage;
 template<typename T>
 static void return_loop(T error_code)
 {
+  fatUnmount("fat:/");
+  __io_usbstorage.shutdown();
+  __io_wiisd.shutdown();
+
   std::cout << "Error Code: " << error_code << std::endl;
   std::cout << "Press the HOME button to return to the Wii Menu" << std::endl;
   while (true)
@@ -59,6 +64,7 @@ s32 init_fat() {
       return_loop("AAAAA");
     }
   }
+
   return 0;
 }
 
@@ -144,14 +150,30 @@ int main()
 
   mz_uint imax = mz_zip_reader_get_num_files(&zip_archive);
   char full_path[2048];
+  std::string dol_path{};
   for (mz_uint i = 0; i < imax; i++) {
     // One day we will get <format>.
     bzero(full_path, 1024);
     mz_zip_archive_file_stat file_stat;
     mz_zip_reader_file_stat(&zip_archive, i, &file_stat);
     std::sprintf(full_path, "fat:/%s", file_stat.m_filename);
+
+    // We aren't given the first directory, meaning the below code will never create it.
+    // I do not feel like handling this edge case so I will use std::filesystem to create every needed directory.
+    std::filesystem::path dir_path(full_path);
+    try {
+      std::filesystem::create_directories(dir_path.parent_path());
+    } catch (const std::exception& e) {
+      return_loop(e.what());
+    }
+
+    // Find the path to the dol.
+    if (std::string_view{file_stat.m_filename}.contains("boot.dol"))
+      dol_path = full_path;
+
     if (mz_zip_reader_is_file_a_directory(&zip_archive, i)) {
       if (full_path[strlen(full_path)-1] == '/') {
+        std::cout << file_stat.m_filename << std::endl;
         full_path[strlen(full_path)-1] = 0x00;
       }
       if (mkdir(full_path, 0777) < 0 && errno != EEXIST) {
@@ -168,7 +190,7 @@ int main()
 
   mz_zip_reader_end(&zip_archive);
 
-  // Now we need to rename the 4th content to be the 2nd.
+  // Now we write a state file telling the bootloader
   u64 title_id{};
   ret = ES_GetTitleID(&title_id);
   if (ret < 0)
@@ -180,65 +202,36 @@ int main()
   u32 lower = static_cast<u32>((title_id & 0xFFFFFFFF00000000LL) >> 32);
   u32 upper = static_cast<u32>(title_id & 0xFFFFFFFFLL);
 
-  char executable[128];
-  char old_path[128];
-  sprintf(executable, "/title/%08x/%08x/content/00000002.app", lower, upper);
-  sprintf(old_path, "/title/%08x/%08x/content/00000004.app", lower, upper);
+  char state[128];
+  sprintf(state, "/title/%08x/%08x/data/state.txt", lower, upper);
 
-  ISFS_Delete(executable);
-  ret = ISFS_CreateFile(executable, 0, 3, 3, 3);
-  if (ret < 0) {
+  ret = ISFS_CreateFile(state, 0, 3, 3, 3);
+  if (ret < 0)
+  {
     std::cout << "Failed to create new executable" << std::endl;
     return_loop(ret);
   }
 
-  s32 fs_fd = ISFS_Open(executable, ISFS_OPEN_WRITE);
-  if (fs_fd < 0) {
+  s32 fs_fd = ISFS_Open(state, ISFS_OPEN_WRITE);
+  if (fs_fd < 0)
+  {
     std::cout << "Failed opening new executable" << std::endl;
     return_loop(fs_fd);
   }
 
-  // Content 4 of the current app is the new executable.
-  es_fd = ES_OpenContent(4);
-  if (es_fd < 0)
-  {
-    // Internal ES error
-    std::cout << "Failed to open content number 4." << std::endl;
-    return_loop(es_fd);
-  }
-
-  data_size = ES_SeekContent(es_fd, 0, SEEK_END);
-  ES_SeekContent(es_fd, 0, SEEK_SET);
-
-  aligned_length = data_size;
-  remainder = aligned_length % 32;
-  if (remainder != 0) {
-    aligned_length += 32 - remainder;
-  }
-
-  void* exe_data = aligned_alloc(32, aligned_length);
-  ret = ES_ReadContent(es_fd, reinterpret_cast<u8*>(exe_data), data_size);
+  ret = ISFS_Write(fs_fd, reinterpret_cast<u8*>(dol_path.data()), dol_path.size());
   if (ret < 0)
   {
-    std::cout << "Failed to read content number 4." << std::endl;
-    return_loop(ret);
-  }
-
-  ES_CloseContent(es_fd);
-
-  ret = ISFS_Write(fs_fd, exe_data, data_size);
-  if (ret < 0) {
     std::cout << "Error writing executable" << std::endl;
     return_loop(ret);
   }
 
   ret = ISFS_Close(fs_fd);
-  if (ret < 0) {
+  if (ret < 0)
+  {
     std::cout << "Error closing executable" << std::endl;
     return_loop(ret);
   }
-
-  ISFS_Delete(old_path);
 
   std::cout << "Successfully completed!" << std::endl;
   std::cout << "Next time you load this channel, you will be forwarded to the homebrew." << std::endl;

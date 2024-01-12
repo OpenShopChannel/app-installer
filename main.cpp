@@ -215,22 +215,40 @@ int main()
   s32 fs_fd = ISFS_Open(state, ISFS_OPEN_WRITE);
   if (fs_fd < 0)
   {
-    std::cout << "Failed opening new executable" << std::endl;
+    std::cout << "Failed opening state file" << std::endl;
     return_loop(fs_fd);
   }
 
   ret = ISFS_Write(fs_fd, reinterpret_cast<u8*>(dol_path.data()), dol_path.size());
   if (ret < 0)
   {
-    std::cout << "Error writing executable" << std::endl;
+    std::cout << "Error writing state file" << std::endl;
     return_loop(ret);
   }
 
   ret = ISFS_Close(fs_fd);
   if (ret < 0)
   {
-    std::cout << "Error closing executable" << std::endl;
+    std::cout << "Error closing state file" << std::endl;
     return_loop(ret);
+  }
+
+  // To save NAND space, make the zip file have a size of 0. We can't flat out delete it or the Wii Menu
+  // will not render it.
+  char zip[128];
+  sprintf(zip, "/title/%08x/%08x/content/00000003.app", lower, upper);
+  ret = ISFS_Delete(zip);
+  if (ret < 0)
+  {
+    std::cout << "Failed deleting zip file" << std::endl;
+    return_loop(fs_fd);
+  }
+
+  ret = ISFS_CreateFile(state, 0, 3, 3, 3);
+  if (ret < 0)
+  {
+    std::cout << "Failed creating empty file" << std::endl;
+    return_loop(fs_fd);
   }
 
   std::cout << "Successfully completed!" << std::endl;

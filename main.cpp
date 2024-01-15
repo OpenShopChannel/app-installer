@@ -3,6 +3,7 @@
 #include <sdcard/wiisd_io.h>
 #include <cstring>
 #include <fat.h>
+#include <ogc/machine/processor.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <filesystem>
@@ -95,7 +96,7 @@ int main()
   if (rmode->viTVMode & VI_NON_INTERLACE)
     VIDEO_WaitVSync();
 
-  if (*reinterpret_cast<volatile u32*>(0xcd800064) != 0xFFFFFFFF)
+  if (read32(0xcd800064) != 0xFFFFFFFF)
   {
     std::cout << "AHBPROT is not disabled! Is this app being run as a title?" << std::endl;
     std::cout << "Exiting in 5 seconds..." << std::endl;

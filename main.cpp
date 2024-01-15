@@ -254,7 +254,7 @@ int main()
   if (ret < 0)
   {
     std::cout << "Failed deleting zip file" << std::endl;
-    // return_loop(ret);
+    return_loop(ret);
   }
   else
   {

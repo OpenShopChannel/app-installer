@@ -95,11 +95,21 @@ int main()
   if (rmode->viTVMode & VI_NON_INTERLACE)
     VIDEO_WaitVSync();
 
-  bool _success = apply_patches();
-  if (!_success) {
-    std::cout << "Failed to apply patches!" << std::endl;
+  if (*reinterpret_cast<volatile u32*>(0xcd800064) != 0xFFFFFFFFF)
+  {
+    std::cout << "AHBPROT is not disabled! Is this app being run as a title?" << std::endl;
+    std::cout << "Exiting in 5 seconds..." << std::endl;
     sleep(5);
-    WII_ReturnToMenu();
+    exit(-1);
+  }
+
+  disable_memory_protections(); // not in the header but it's not static /shrug
+  if (!patch_isfs_permissions())
+  {
+    std::cout << "Failed to find and patch ISFS permissions!" << std::endl;
+    std::cout << "Exiting in 5 seconds..." << std::endl;
+    sleep(5);
+    exit(-1);
   }
 
   WPAD_Init();
@@ -139,8 +149,7 @@ int main()
 
   ES_CloseContent(es_fd);
 
-  mz_zip_archive zip_archive;
-  std::memset(&zip_archive, 0, sizeof(zip_archive));
+  mz_zip_archive zip_archive{};
   mz_bool success = mz_zip_reader_init_mem(&zip_archive, zip_data, data_size, 0);
   if (!success)
   {
@@ -241,14 +250,14 @@ int main()
   if (ret < 0)
   {
     std::cout << "Failed deleting zip file" << std::endl;
-    return_loop(fs_fd);
+    return_loop(ret);
   }
 
   ret = ISFS_CreateFile(state, 0, 3, 3, 3);
   if (ret < 0)
   {
     std::cout << "Failed creating empty file" << std::endl;
-    return_loop(fs_fd);
+    return_loop(ret);
   }
 
   std::cout << "Successfully completed!" << std::endl;

@@ -9,8 +9,11 @@
 #include <filesystem>
 #include "miniz.h"
 
-extern "C" {
+extern "C"
+{
 #include "libpatcher/libpatcher.h"
+void disable_memory_protections(void);
+bool is_dolphin(void);
 }
 
 // Video
@@ -105,7 +108,7 @@ int main()
   }
 
   disable_memory_protections(); // not in the header but it's not static /shrug
-  if (!patch_isfs_permissions())
+  if (!is_dolphin() && !patch_isfs_permissions())
   {
     std::cout << "Failed to find and patch ISFS permissions!" << std::endl;
     std::cout << "Exiting in 5 seconds..." << std::endl;
@@ -251,14 +254,16 @@ int main()
   if (ret < 0)
   {
     std::cout << "Failed deleting zip file" << std::endl;
-    return_loop(ret);
+    // return_loop(ret);
   }
-
-  ret = ISFS_CreateFile(state, 0, 3, 3, 3);
-  if (ret < 0)
+  else
   {
-    std::cout << "Failed creating empty file" << std::endl;
-    return_loop(ret);
+    ret = ISFS_CreateFile(state, 0, 3, 3, 3);
+    if (ret < 0)
+    {
+      std::cout << "Failed creating empty file" << std::endl;
+      return_loop(ret);
+    }
   }
 
   std::cout << "Successfully completed!" << std::endl;
